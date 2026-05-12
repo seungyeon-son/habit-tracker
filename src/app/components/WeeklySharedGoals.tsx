@@ -131,7 +131,7 @@ export function WeeklySharedGoals({ goals, completedIds, onToggle, onAdd, onDele
               <div
                 className="h-full rounded-full transition-all duration-500 ease-out"
                 style={{
-                  width: \`\${progressPct}%\`,
+                  width: `${progressPct}%`,
                   background: 'linear-gradient(90deg, #5B8FF9, #61D4A4)',
                 }}
               />
@@ -169,7 +169,7 @@ export function WeeklySharedGoals({ goals, completedIds, onToggle, onAdd, onDele
               </button>
 
               {/* Goal name */}
-              <span className={`flex-1 text-sm transition-all duration-200 \${isChecked ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+              <span className={`flex-1 text-sm transition-all duration-200 ${isChecked ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                 {goal.name}
               </span>
 

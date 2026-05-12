@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
-import { CircularProgress } from './components/CircularProgress';
-import { WeeklyProgressBar } from './components/WeeklyProgressBar';
-import { AddHabitDialog } from './components/AddHabitDialog';
-import { WeeklySharedGoals, getNextGoalColor } from './components/WeeklySharedGoals';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
-import { Calendar, TrendingUp, LayoutGrid } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { CircularProgress } from "./components/CircularProgress";
+import { WeeklyProgressBar } from "./components/WeeklyProgressBar";
+import { AddHabitDialog } from "./components/AddHabitDialog";
+import { WeeklySharedGoals, getNextGoalColor } from "./components/WeeklySharedGoals";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
+import { Calendar, TrendingUp, LayoutGrid } from "lucide-react";
 
 interface Habit {
   id: string;
@@ -24,18 +24,9 @@ interface HabitCompletion {
   completed: boolean;
 }
 
-const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
-const HABIT_COLORS = [
-  '#6B8DD6',
-  '#F2C94C',
-  '#B77CCD',
-  '#5FC9B3',
-  '#F37E5F',
-  '#E991BC',
-  '#8BC34A',
-  '#FF9A76',
-];
+const HABIT_COLORS = ["#6B8DD6", "#F2C94C", "#B77CCD", "#5FC9B3", "#F37E5F", "#E991BC", "#8BC34A", "#FF9A76"];
 
 function getDayOfWeek(dateString: string) {
   const date = new Date(dateString);
@@ -44,8 +35,8 @@ function getDayOfWeek(dateString: string) {
 }
 
 function getNextColor(existingHabits: Habit[]) {
-  const usedColors = existingHabits.map(h => h.color);
-  const availableColor = HABIT_COLORS.find(color => !usedColors.includes(color));
+  const usedColors = existingHabits.map((h) => h.color);
+  const availableColor = HABIT_COLORS.find((color) => !usedColors.includes(color));
   return availableColor || HABIT_COLORS[existingHabits.length % HABIT_COLORS.length];
 }
 
@@ -57,7 +48,7 @@ function getWeekDates() {
   return Array.from({ length: 7 }, (_, i) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
-    return date.toISOString().split('T')[0];
+    return date.toISOString().split("T")[0];
   });
 }
 
@@ -66,11 +57,11 @@ function getWeekStartDate(): string {
   const dayOfWeek = today.getDay();
   const monday = new Date(today);
   monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  return monday.toISOString().split('T')[0];
+  return monday.toISOString().split("T")[0];
 }
 
 function getTodayDate() {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toISOString().split("T")[0];
 }
 
 function formatWeekLabel(): string {
@@ -80,49 +71,49 @@ function formatWeekLabel(): string {
   monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  const mo = monday.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
-  const su = sunday.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+  const mo = monday.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
+  const su = sunday.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
   return `${mo} ~ ${su}`;
 }
 
 export default function App() {
   const [habits, setHabits] = useState<Habit[]>([
-    { id: '1', name: '물 8잔 마시기', color: HABIT_COLORS[0] },
-    { id: '2', name: '30분 운동하기', color: HABIT_COLORS[1] },
-    { id: '3', name: '독서 30분', color: HABIT_COLORS[2] },
+    { id: "1", name: "물 8잔 마시기", color: HABIT_COLORS[0] },
+    { id: "2", name: "30분 운동하기", color: HABIT_COLORS[1] },
+    { id: "3", name: "독서 30분", color: HABIT_COLORS[2] },
   ]);
 
   const [completions, setCompletions] = useState<HabitCompletion[]>([]);
 
   // Weekly shared goals state
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([
-    { id: 'sg1', name: '함께 산책 3회 이상', color: '#5B8FF9' },
-    { id: 'sg2', name: '주 1회 외식 계획 세우기', color: '#61D4A4' },
-    { id: 'sg3', name: '독서 모임 참여하기', color: '#F6A623' },
+    { id: "sg1", name: "함께 산책 3회 이상", color: "#5B8FF9" },
+    { id: "sg2", name: "주 1회 외식 계획 세우기", color: "#61D4A4" },
+    { id: "sg3", name: "독서 모임 참여하기", color: "#F6A623" },
   ]);
 
   // Completed goal IDs per week key
   const [goalCompletions, setGoalCompletions] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    const savedCompletions = localStorage.getItem('habit-completions');
+    const savedCompletions = localStorage.getItem("habit-completions");
     if (savedCompletions) setCompletions(JSON.parse(savedCompletions));
-    const savedGoalCompletions = localStorage.getItem('goal-completions');
+    const savedGoalCompletions = localStorage.getItem("goal-completions");
     if (savedGoalCompletions) setGoalCompletions(JSON.parse(savedGoalCompletions));
-    const savedSharedGoals = localStorage.getItem('shared-goals');
+    const savedSharedGoals = localStorage.getItem("shared-goals");
     if (savedSharedGoals) setSharedGoals(JSON.parse(savedSharedGoals));
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('habit-completions', JSON.stringify(completions));
+    localStorage.setItem("habit-completions", JSON.stringify(completions));
   }, [completions]);
 
   useEffect(() => {
-    localStorage.setItem('goal-completions', JSON.stringify(goalCompletions));
+    localStorage.setItem("goal-completions", JSON.stringify(goalCompletions));
   }, [goalCompletions]);
 
   useEffect(() => {
-    localStorage.setItem('shared-goals', JSON.stringify(sharedGoals));
+    localStorage.setItem("shared-goals", JSON.stringify(sharedGoals));
   }, [sharedGoals]);
 
   const today = getTodayDate();
@@ -130,10 +121,10 @@ export default function App() {
   const currentWeekCompletedIds = goalCompletions[weekKey] ?? [];
 
   const handleToggleHabit = (habitId: string, checked: boolean) => {
-    setCompletions(prev => {
-      const existing = prev.find(c => c.habitId === habitId && c.date === today);
+    setCompletions((prev) => {
+      const existing = prev.find((c) => c.habitId === habitId && c.date === today);
       if (existing) {
-        return prev.map(c => c.habitId === habitId && c.date === today ? { ...c, completed: checked } : c);
+        return prev.map((c) => (c.habitId === habitId && c.date === today ? { ...c, completed: checked } : c));
       }
       return [...prev, { habitId, date: today, completed: checked }];
     });
@@ -144,16 +135,14 @@ export default function App() {
   };
 
   const deleteHabit = (id: string) => {
-    setHabits(habits.filter(h => h.id !== id));
-    setCompletions(completions.filter(c => c.habitId !== id));
+    setHabits(habits.filter((h) => h.id !== id));
+    setCompletions(completions.filter((c) => c.habitId !== id));
   };
 
   const handleToggleGoal = (goalId: string) => {
-    setGoalCompletions(prev => {
+    setGoalCompletions((prev) => {
       const current = prev[weekKey] ?? [];
-      const updated = current.includes(goalId)
-        ? current.filter(id => id !== goalId)
-        : [...current, goalId];
+      const updated = current.includes(goalId) ? current.filter((id) => id !== goalId) : [...current, goalId];
       return { ...prev, [weekKey]: updated };
     });
   };
@@ -168,11 +157,11 @@ export default function App() {
   };
 
   const deleteSharedGoal = (id: string) => {
-    setSharedGoals(sharedGoals.filter(g => g.id !== id));
-    setGoalCompletions(prev => {
+    setSharedGoals(sharedGoals.filter((g) => g.id !== id));
+    setGoalCompletions((prev) => {
       const updated = { ...prev };
       for (const k of Object.keys(updated)) {
-        updated[k] = updated[k].filter(gid => gid !== id);
+        updated[k] = updated[k].filter((gid) => gid !== id);
       }
       return updated;
     });
@@ -180,23 +169,27 @@ export default function App() {
 
   const weekDates = getWeekDates();
   const weekProgressData = weekDates.map((date) => {
-    const dayCompletions = completions.filter(c => c.date === date && c.completed);
+    const dayCompletions = completions.filter((c) => c.date === date && c.completed);
     const completed = dayCompletions.length;
     const total = habits.length;
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const segments = habits.map(habit => {
-      const isCompleted = completions.some(c => c.habitId === habit.id && c.date === date && c.completed);
-      return { color: habit.color, width: isCompleted ? (100 / total) : 0 };
-    }).filter(seg => seg.width > 0);
+    const segments = habits
+      .map((habit) => {
+        const isCompleted = completions.some((c) => c.habitId === habit.id && c.date === date && c.completed);
+        return { color: habit.color, width: isCompleted ? 100 / total : 0 };
+      })
+      .filter((seg) => seg.width > 0);
     return { day: getDayOfWeek(date), percentage, completed, total, isToday: date === today, segments };
   });
 
-  const todayCompletions = completions.filter(c => c.date === today && c.completed).length;
+  const todayCompletions = completions.filter((c) => c.date === today && c.completed).length;
   const progress = habits.length > 0 ? Math.round((todayCompletions / habits.length) * 100) : 0;
-  const circularSegments = habits.map(habit => {
-    const isCompleted = completions.some(c => c.habitId === habit.id && c.date === today && c.completed);
-    return { color: habit.color, percentage: isCompleted ? (100 / habits.length) : 0 };
-  }).filter(seg => seg.percentage > 0);
+  const circularSegments = habits
+    .map((habit) => {
+      const isCompleted = completions.some((c) => c.habitId === habit.id && c.date === today && c.completed);
+      return { color: habit.color, percentage: isCompleted ? 100 / habits.length : 0 };
+    })
+    .filter((seg) => seg.percentage > 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -207,8 +200,11 @@ export default function App() {
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar className="w-4 h-4" />
             <p className="text-sm">
-              {new Date().toLocaleDateString('ko-KR', {
-                year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+              {new Date().toLocaleDateString("ko-KR", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                weekday: "long",
               })}
             </p>
           </div>
@@ -233,7 +229,6 @@ export default function App() {
 
           {/* ── 오늘 탭 ── */}
           <TabsContent value="today" className="space-y-4 mt-0">
-
             {/* 주간공동목표 — TOP of 오늘 tab */}
             <WeeklySharedGoals
               goals={sharedGoals}
@@ -250,14 +245,16 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <h3 className="m-0">오늘의 습관</h3>
-                    <span className="text-sm text-muted-foreground">({todayCompletions}/{habits.length})</span>
+                    <span className="text-sm text-muted-foreground">
+                      ({todayCompletions}/{habits.length})
+                    </span>
                   </div>
                   <AddHabitDialog onAdd={addHabit} />
                 </div>
               </div>
               <div className="px-3 pb-3 space-y-1">
-                {habits.map(habit => {
-                  const completion = completions.find(c => c.habitId === habit.id && c.date === today);
+                {habits.map((habit) => {
+                  const completion = completions.find((c) => c.habitId === habit.id && c.date === today);
                   return (
                     <div
                       key={habit.id}
@@ -267,36 +264,62 @@ export default function App() {
                       <button
                         className="flex-shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all duration-200"
                         style={{
-                          backgroundColor: completion?.completed ? habit.color : 'transparent',
+                          backgroundColor: completion?.completed ? habit.color : "transparent",
                           borderColor: habit.color,
-                          transform: completion?.completed ? 'scale(0.92)' : 'scale(1)',
+                          transform: completion?.completed ? "scale(0.92)" : "scale(1)",
                         }}
-                        onClick={(e) => { e.stopPropagation(); handleToggleHabit(habit.id, !(completion?.completed || false)); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleHabit(habit.id, !(completion?.completed || false));
+                        }}
                       >
                         {completion?.completed && (
-                          <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <svg
+                            className="w-4 h-4 text-white"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         )}
                       </button>
-                      <span className={`flex-1 text-sm transition-all duration-200 \${completion?.completed ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                      <span
+                        className={`flex-1 text-sm transition-all duration-200 ${completion?.completed ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                      >
                         {habit.name}
                       </span>
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteHabit(habit.id); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteHabit(habit.id);
+                        }}
                         className="flex-shrink-0 p-1.5 rounded-lg bg-destructive/10 text-destructive opacity-0 group-hover:opacity-100 hover:bg-destructive/20 transition-all"
                       >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+                        <svg
+                          className="w-3.5 h-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                          <path d="M10 11v6" />
+                          <path d="M14 11v6" />
+                          <path d="M9 6V4h6v2" />
                         </svg>
                       </button>
                     </div>
                   );
                 })}
                 {habits.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    새 습관을 추가하여 시작하세요
-                  </div>
+                  <div className="text-center py-8 text-muted-foreground text-sm">새 습관을 추가하여 시작하세요</div>
                 )}
               </div>
             </div>
@@ -330,25 +353,42 @@ export default function App() {
             {/* Weekly goal summary */}
             <div className="rounded-2xl bg-card border border-border p-6">
               <div className="flex items-center gap-2 mb-4">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color: '#5B8FF9'}}>
-                  <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+                <svg
+                  className="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ color: "#5B8FF9" }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v4l3 3" />
                 </svg>
                 <h3 className="m-0">이번 주 공동 목표 현황</h3>
               </div>
               <div className="space-y-3">
-                {sharedGoals.map(goal => {
+                {sharedGoals.map((goal) => {
                   const done = currentWeekCompletedIds.includes(goal.id);
                   return (
                     <div key={goal.id} className="flex items-center gap-3">
                       <div
                         className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: done ? goal.color : undefined, border: \`2px solid \${goal.color}\` }}
+                        style={{ backgroundColor: done ? goal.color : undefined, border: `2px solid ${goal.color}` }}
                       />
-                      <span className={`text-sm flex-1 \${done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                      <span
+                        className={`text-sm flex-1 ${done ? "line-through text-muted-foreground" : "text-foreground"}`}
+                      >
                         {goal.name}
                       </span>
                       {done && (
-                        <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: goal.color }}>완료</span>
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: goal.color }}
+                        >
+                          완료
+                        </span>
                       )}
                     </div>
                   );
@@ -365,9 +405,9 @@ export default function App() {
             <div className="rounded-2xl bg-card border border-border p-6">
               <h3 className="m-0 mb-4">습관 달성 현황</h3>
               <div className="space-y-4">
-                {habits.map(habit => {
-                  const weeklyCount = weekDates.filter(d =>
-                    completions.some(c => c.habitId === habit.id && c.date === d && c.completed)
+                {habits.map((habit) => {
+                  const weeklyCount = weekDates.filter((d) =>
+                    completions.some((c) => c.habitId === habit.id && c.date === d && c.completed),
                   ).length;
                   const pct = Math.round((weeklyCount / 7) * 100);
                   return (
@@ -382,7 +422,7 @@ export default function App() {
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `\${pct}%`, backgroundColor: habit.color }}
+                          style={{ width: `${pct}%`, backgroundColor: habit.color }}
                         />
                       </div>
                     </div>
