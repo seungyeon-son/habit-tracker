@@ -1,28 +1,21 @@
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
-const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+// Firebase 클라이언트 설정 (공개 키 - 브라우저에 노출되는 값, 보안은 Firestore Rules로 관리)
+const firebaseConfig = {
+  apiKey: "AIzaSyC0wyKMmbOcQtSZQntQG6pBYgI-RriI51c",
+  authDomain: "habit-tracker-83558.firebaseapp.com",
+  projectId: "habit-tracker-83558",
+  storageBucket: "habit-tracker-83558.firebasestorage.app",
+  messagingSenderId: "678377254780",
+  appId: "1:678377254780:web:245ba0d6d87401f7adfef9",
+  measurementId: "G-8GHK6YNC5Z",
+};
 
-export const isFirebaseEnabled = !!(apiKey && projectId);
+const app = initializeApp(firebaseConfig);
 
-let _auth: Auth | undefined;
-let _db: Firestore | undefined;
-
-if (isFirebaseEnabled) {
-  const app: FirebaseApp = initializeApp({
-    apiKey,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  });
-  _auth = getAuth(app);
-  _db = getFirestore(app);
-}
-
-export const auth = _auth;
-export const db = _db;
+export const auth = getAuth(app);
+export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
+export const isFirebaseEnabled = true;
