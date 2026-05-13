@@ -5,7 +5,7 @@ import { AddHabitDialog } from "./components/AddHabitDialog";
 import { AuthButton } from "./components/AuthButton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { Calendar, TrendingUp, CalendarDays, BarChart2, Trash2 } from "lucide-react";
-import { auth, db, googleProvider, isFirebaseEnabled } from "./firebase";
+import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 
@@ -89,26 +89,28 @@ function loadLocal<T>(key: string, fallback: T): T {
 // ── App ────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [user, setUser]             = useState<User | null>(null);
-  const [habits, setHabits]         = useState<Habit[]>(() => loadLocal("habits-v2", DEFAULT_HABITS));
+  const [user, setUser]               = useState<User | null>(null);
+  const [firestoreReady, setFirestoreReady] = useState(false);
+  const [habits, setHabits]           = useState<Habit[]>(() => loadLocal("habits-v2", DEFAULT_HABITS));
   const [completions, setCompletions] = useState<HabitCompletion[]>(() => loadLocal("habit-completions", []));
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [weekOffset, setWeekOffset]   = useState(0);
 
-  // ── Persist to localStorage ──────────────────────────────────────────────
+  // ── 로그아웃 상태에서만 localStorage에 저장 ────────────────────────────
   useEffect(() => {
-    localStorage.setItem("habits-v2", JSON.stringify(habits));
-  }, [habits]);
+    if (!user) localStorage.setItem("habits-v2", JSON.stringify(habits));
+  }, [habits, user]);
 
   useEffect(() => {
-    localStorage.setItem("habit-completions", JSON.stringify(completions));
-  }, [completions]);
+    if (!user) localStorage.setItem("habit-completions", JSON.stringify(completions));
+  }, [completions, user]);
 
   // ── Firebase auth ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isFirebaseEnabled || !auth) return;
+    if (!auth) return;
     return onAuthStateChanged(auth, async (u) => {
-      setUser(u);
       if (u && db) {
+        // Firestore 로딩 완료 전까지 sync 차단 (race condition 방지)
+        setFirestoreReady(false);
         const ref = doc(db, "users", u.uid);
         const snap = await getDoc(ref);
         if (snap.exists()) {
@@ -116,20 +118,31 @@ export default function App() {
           if (data.habits)      setHabits(data.habits);
           if (data.completions) setCompletions(data.completions);
         } else {
-          // First sign-in: upload local data
-          await setDoc(ref, { habits, completions });
+          // 최초 로그인: 현재 로컬 데이터를 Firestore에 업로드
+          const localHabits      = loadLocal<Habit[]>("habits-v2", DEFAULT_HABITS);
+          const localCompletions = loadLocal<HabitCompletion[]>("habit-completions", []);
+          await setDoc(ref, { habits: localHabits, completions: localCompletions });
+          setHabits(localHabits);
+          setCompletions(localCompletions);
         }
+        setUser(u);
+        setFirestoreReady(true); // 이 시점부터 sync 허용
+      } else {
+        // 로그아웃: 로컬(비로그인) 데이터로 복원
+        setFirestoreReady(false);
+        setUser(null);
+        setHabits(loadLocal("habits-v2", DEFAULT_HABITS));
+        setCompletions(loadLocal("habit-completions", []));
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Sync to Firestore on every change ────────────────────────────────────
+  // ── Firestore 동기화 (firestoreReady 이후에만 실행) ───────────────────
   useEffect(() => {
-    if (!isFirebaseEnabled || !user || !db) return;
+    if (!user || !db || !firestoreReady) return;
     const ref = doc(db, "users", user.uid);
     setDoc(ref, { habits, completions }, { merge: true });
-  }, [habits, completions, user]);
+  }, [habits, completions, user, firestoreReady]);
 
   // ── Auth actions ─────────────────────────────────────────────────────────
   const handleSignIn = async () => {
@@ -140,7 +153,7 @@ export default function App() {
   const handleSignOut = async () => {
     if (!auth) return;
     await signOut(auth);
-    setUser(null);
+    // 상태 초기화는 onAuthStateChanged의 else 분기에서 처리
   };
 
   // ── Habit actions ─────────────────────────────────────────────────────────
