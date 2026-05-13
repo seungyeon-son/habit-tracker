@@ -1,20 +1,22 @@
 import { useState, useEffect } from "react";
 import { CircularProgress } from "./components/CircularProgress";
-import { WeeklyProgressBar } from "./components/WeeklyProgressBar";
+import { WeeklyDots } from "./components/WeeklyDots";
 import { AddHabitDialog } from "./components/AddHabitDialog";
-import { WeeklySharedGoals, getNextGoalColor } from "./components/WeeklySharedGoals";
+import { AuthButton } from "./components/AuthButton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
-import { Calendar, TrendingUp, LayoutGrid } from "lucide-react";
+import { Calendar, TrendingUp, CalendarDays, BarChart2, Trash2 } from "lucide-react";
+import { auth, db, googleProvider, isFirebaseEnabled } from "./firebase";
+import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth";
+import { doc, setDoc, getDoc } from "firebase/firestore";
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type Category = "유지루틴" | "생산성개선";
 
 interface Habit {
   id: string;
   name: string;
-  color: string;
-}
-
-interface SharedGoal {
-  id: string;
-  name: string;
+  category: Category;
   color: string;
 }
 
@@ -24,436 +26,399 @@ interface HabitCompletion {
   completed: boolean;
 }
 
-const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+// ── Constants ──────────────────────────────────────────────────────────────
 
-const HABIT_COLORS = ["#6B8DD6", "#F2C94C", "#B77CCD", "#5FC9B3", "#F37E5F", "#E991BC", "#8BC34A", "#FF9A76"];
+const HABIT_COLORS = [
+  "#6B8DD6", "#5FC9B3", "#F2C94C", "#B77CCD",
+  "#F37E5F", "#E991BC", "#8BC34A", "#FF9A76",
+];
 
-function getDayOfWeek(dateString: string) {
-  const date = new Date(dateString);
-  const day = date.getDay();
-  return DAYS[day === 0 ? 6 : day - 1];
-}
+const DEFAULT_HABITS: Habit[] = [
+  { id: "routine-1", name: "다이어리쓰기", category: "유지루틴",    color: "#6B8DD6" },
+  { id: "routine-2", name: "독서",          category: "유지루틴",    color: "#5FC9B3" },
+  { id: "routine-3", name: "최소지출",      category: "유지루틴",    color: "#F2C94C" },
+  { id: "prod-1",    name: "생각구독-배움", category: "생산성개선",  color: "#B77CCD" },
+  { id: "prod-2",    name: "운동",          category: "생산성개선",  color: "#F37E5F" },
+  { id: "prod-3",    name: "클로드사용",    category: "생산성개선",  color: "#E991BC" },
+];
 
-function getNextColor(existingHabits: Habit[]) {
-  const usedColors = existingHabits.map((h) => h.color);
-  const availableColor = HABIT_COLORS.find((color) => !usedColors.includes(color));
-  return availableColor || HABIT_COLORS[existingHabits.length % HABIT_COLORS.length];
-}
+const CATEGORY_COLOR: Record<Category, string> = {
+  "유지루틴":   "#5B8FF9",
+  "생산성개선": "#61D4A4",
+};
 
-function getWeekDates() {
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  return Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + i);
-    return date.toISOString().split("T")[0];
-  });
-}
-
-function getWeekStartDate(): string {
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  return monday.toISOString().split("T")[0];
-}
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function getTodayDate() {
   return new Date().toISOString().split("T")[0];
 }
 
-function formatWeekLabel(): string {
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const mo = monday.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-  const su = sunday.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-  return `${mo} ~ ${su}`;
+function getWeekDates(offset = 0): string[] {
+  const ref = new Date();
+  ref.setDate(ref.getDate() + offset * 7);
+  const day = ref.getDay();
+  const mon = new Date(ref);
+  mon.setDate(ref.getDate() - (day === 0 ? 6 : day - 1));
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    return d.toISOString().split("T")[0];
+  });
 }
 
+function formatDateRange(dates: string[]) {
+  const fmt = (s: string) =>
+    new Date(s).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
+  return `${fmt(dates[0])} ~ ${fmt(dates[6])}`;
+}
+
+function getNextColor(habits: Habit[]) {
+  const used = new Set(habits.map((h) => h.color));
+  return HABIT_COLORS.find((c) => !used.has(c)) ?? HABIT_COLORS[habits.length % HABIT_COLORS.length];
+}
+
+function loadLocal<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// ── App ────────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [habits, setHabits] = useState<Habit[]>([
-    { id: "1", name: "물 8잔 마시기", color: HABIT_COLORS[0] },
-    { id: "2", name: "30분 운동하기", color: HABIT_COLORS[1] },
-    { id: "3", name: "독서 30분", color: HABIT_COLORS[2] },
-  ]);
+  const [user, setUser]             = useState<User | null>(null);
+  const [habits, setHabits]         = useState<Habit[]>(() => loadLocal("habits-v2", DEFAULT_HABITS));
+  const [completions, setCompletions] = useState<HabitCompletion[]>(() => loadLocal("habit-completions", []));
+  const [weekOffset, setWeekOffset] = useState(0);
 
-  const [completions, setCompletions] = useState<HabitCompletion[]>([]);
-
-  // Weekly shared goals state
-  const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([
-    { id: "sg1", name: "함께 산책 3회 이상", color: "#5B8FF9" },
-    { id: "sg2", name: "주 1회 외식 계획 세우기", color: "#61D4A4" },
-    { id: "sg3", name: "독서 모임 참여하기", color: "#F6A623" },
-  ]);
-
-  // Completed goal IDs per week key
-  const [goalCompletions, setGoalCompletions] = useState<Record<string, string[]>>({});
-
+  // ── Persist to localStorage ──────────────────────────────────────────────
   useEffect(() => {
-    const savedCompletions = localStorage.getItem("habit-completions");
-    if (savedCompletions) setCompletions(JSON.parse(savedCompletions));
-    const savedGoalCompletions = localStorage.getItem("goal-completions");
-    if (savedGoalCompletions) setGoalCompletions(JSON.parse(savedGoalCompletions));
-    const savedSharedGoals = localStorage.getItem("shared-goals");
-    if (savedSharedGoals) setSharedGoals(JSON.parse(savedSharedGoals));
-  }, []);
+    localStorage.setItem("habits-v2", JSON.stringify(habits));
+  }, [habits]);
 
   useEffect(() => {
     localStorage.setItem("habit-completions", JSON.stringify(completions));
   }, [completions]);
 
+  // ── Firebase auth ────────────────────────────────────────────────────────
   useEffect(() => {
-    localStorage.setItem("goal-completions", JSON.stringify(goalCompletions));
-  }, [goalCompletions]);
-
-  useEffect(() => {
-    localStorage.setItem("shared-goals", JSON.stringify(sharedGoals));
-  }, [sharedGoals]);
-
-  const today = getTodayDate();
-  const weekKey = getWeekStartDate();
-  const currentWeekCompletedIds = goalCompletions[weekKey] ?? [];
-
-  const handleToggleHabit = (habitId: string, checked: boolean) => {
-    setCompletions((prev) => {
-      const existing = prev.find((c) => c.habitId === habitId && c.date === today);
-      if (existing) {
-        return prev.map((c) => (c.habitId === habitId && c.date === today ? { ...c, completed: checked } : c));
+    if (!isFirebaseEnabled || !auth) return;
+    return onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u && db) {
+        const ref = doc(db, "users", u.uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data() as { habits?: Habit[]; completions?: HabitCompletion[] };
+          if (data.habits)      setHabits(data.habits);
+          if (data.completions) setCompletions(data.completions);
+        } else {
+          // First sign-in: upload local data
+          await setDoc(ref, { habits, completions });
+        }
       }
-      return [...prev, { habitId, date: today, completed: checked }];
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Sync to Firestore on every change ────────────────────────────────────
+  useEffect(() => {
+    if (!isFirebaseEnabled || !user || !db) return;
+    const ref = doc(db, "users", user.uid);
+    setDoc(ref, { habits, completions }, { merge: true });
+  }, [habits, completions, user]);
+
+  // ── Auth actions ─────────────────────────────────────────────────────────
+  const handleSignIn = async () => {
+    if (!auth || !googleProvider) return;
+    try { await signInWithPopup(auth, googleProvider); }
+    catch (err) { console.error("Google sign-in failed:", err); }
+  };
+  const handleSignOut = async () => {
+    if (!auth) return;
+    await signOut(auth);
+    setUser(null);
+  };
+
+  // ── Habit actions ─────────────────────────────────────────────────────────
+  const toggleHabit = (habitId: string, date: string) => {
+    setCompletions((prev) => {
+      const idx = prev.findIndex((c) => c.habitId === habitId && c.date === date);
+      if (idx >= 0) {
+        return prev.map((c, i) => i === idx ? { ...c, completed: !c.completed } : c);
+      }
+      return [...prev, { habitId, date, completed: true }];
     });
   };
 
-  const addHabit = (name: string) => {
-    setHabits([...habits, { id: Date.now().toString(), name, color: getNextColor(habits) }]);
+  const addHabit = (name: string, category: Category) => {
+    setHabits((prev) => [
+      ...prev,
+      { id: Date.now().toString(), name, category, color: getNextColor(prev) },
+    ]);
   };
 
   const deleteHabit = (id: string) => {
-    setHabits(habits.filter((h) => h.id !== id));
-    setCompletions(completions.filter((c) => c.habitId !== id));
+    setHabits((prev) => prev.filter((h) => h.id !== id));
+    setCompletions((prev) => prev.filter((c) => c.habitId !== id));
   };
 
-  const handleToggleGoal = (goalId: string) => {
-    setGoalCompletions((prev) => {
-      const current = prev[weekKey] ?? [];
-      const updated = current.includes(goalId) ? current.filter((id) => id !== goalId) : [...current, goalId];
-      return { ...prev, [weekKey]: updated };
-    });
-  };
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const today     = getTodayDate();
+  const weekDates = getWeekDates(weekOffset);
 
-  const addSharedGoal = (name: string) => {
-    const newGoal: SharedGoal = {
-      id: Date.now().toString(),
-      name,
-      color: getNextGoalColor(sharedGoals),
-    };
-    setSharedGoals([...sharedGoals, newGoal]);
-  };
+  const routineHabits      = habits.filter((h) => h.category === "유지루틴");
+  const productivityHabits = habits.filter((h) => h.category === "생산성개선");
 
-  const deleteSharedGoal = (id: string) => {
-    setSharedGoals(sharedGoals.filter((g) => g.id !== id));
-    setGoalCompletions((prev) => {
-      const updated = { ...prev };
-      for (const k of Object.keys(updated)) {
-        updated[k] = updated[k].filter((gid) => gid !== id);
-      }
-      return updated;
-    });
-  };
-
-  const weekDates = getWeekDates();
-  const weekProgressData = weekDates.map((date) => {
-    const dayCompletions = completions.filter((c) => c.date === date && c.completed);
-    const completed = dayCompletions.length;
-    const total = habits.length;
-    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const segments = habits
-      .map((habit) => {
-        const isCompleted = completions.some((c) => c.habitId === habit.id && c.date === date && c.completed);
-        return { color: habit.color, width: isCompleted ? 100 / total : 0 };
-      })
-      .filter((seg) => seg.width > 0);
-    return { day: getDayOfWeek(date), percentage, completed, total, isToday: date === today, segments };
-  });
-
-  const todayCompletions = completions.filter((c) => c.date === today && c.completed).length;
-  const progress = habits.length > 0 ? Math.round((todayCompletions / habits.length) * 100) : 0;
+  const todayDone  = completions.filter((c) => c.date === today && c.completed).length;
+  const todayTotal = habits.length;
+  const progress   = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0;
   const circularSegments = habits
-    .map((habit) => {
-      const isCompleted = completions.some((c) => c.habitId === habit.id && c.date === today && c.completed);
-      return { color: habit.color, percentage: isCompleted ? 100 / habits.length : 0 };
-    })
-    .filter((seg) => seg.percentage > 0);
+    .map((h) => ({
+      color:      h.color,
+      percentage: completions.some((c) => c.habitId === h.id && c.date === today && c.completed)
+        ? 100 / todayTotal
+        : 0,
+    }))
+    .filter((s) => s.percentage > 0);
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-2xl mx-auto px-4 pt-6 pb-12">
+
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="mb-1">습관 대시보드</h1>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Calendar className="w-4 h-4" />
-            <p className="text-sm">
-              {new Date().toLocaleDateString("ko-KR", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                weekday: "long",
-              })}
-            </p>
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="mb-1">습관 대시보드</h1>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Calendar className="w-4 h-4" />
+              <p className="text-sm">
+                {new Date().toLocaleDateString("ko-KR", {
+                  year: "numeric", month: "long", day: "numeric", weekday: "long",
+                })}
+              </p>
+            </div>
           </div>
+          {isFirebaseEnabled && (
+            <AuthButton user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
+          )}
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="today" className="w-full">
           <TabsList className="w-full mb-6">
-            <TabsTrigger value="today" className="flex-1 gap-1.5">
-              <Calendar className="w-3.5 h-3.5" />
-              오늘
+            <TabsTrigger value="today"   className="flex-1 gap-1.5">
+              <Calendar       className="w-3.5 h-3.5" /> 오늘
             </TabsTrigger>
-            <TabsTrigger value="weekly" className="flex-1 gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5" />
-              주간
+            <TabsTrigger value="weekly"  className="flex-1 gap-1.5">
+              <TrendingUp     className="w-3.5 h-3.5" /> 주간
             </TabsTrigger>
-            <TabsTrigger value="stats" className="flex-1 gap-1.5">
-              <LayoutGrid className="w-3.5 h-3.5" />
-              분석
+            <TabsTrigger value="monthly" className="flex-1 gap-1.5">
+              <CalendarDays   className="w-3.5 h-3.5" /> 월간
+            </TabsTrigger>
+            <TabsTrigger value="yearly"  className="flex-1 gap-1.5">
+              <BarChart2      className="w-3.5 h-3.5" /> 연간
             </TabsTrigger>
           </TabsList>
 
           {/* ── 오늘 탭 ── */}
           <TabsContent value="today" className="space-y-4 mt-0">
-            {/* 주간공동목표 — TOP of 오늘 tab */}
-            <WeeklySharedGoals
-              goals={sharedGoals}
-              completedIds={currentWeekCompletedIds}
-              onToggle={handleToggleGoal}
-              onAdd={addSharedGoal}
-              onDelete={deleteSharedGoal}
-              weekLabel={formatWeekLabel()}
-            />
-
-            {/* 오늘의 습관 */}
-            <div className="rounded-2xl bg-card border border-border overflow-hidden">
-              <div className="px-5 pt-5 pb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h3 className="m-0">오늘의 습관</h3>
-                    <span className="text-sm text-muted-foreground">
-                      ({todayCompletions}/{habits.length})
-                    </span>
-                  </div>
-                  <AddHabitDialog onAdd={addHabit} />
-                </div>
-              </div>
-              <div className="px-3 pb-3 space-y-1">
-                {habits.map((habit) => {
-                  const completion = completions.find((c) => c.habitId === habit.id && c.date === today);
-                  return (
-                    <div
-                      key={habit.id}
-                      className="group flex items-center gap-3 px-2 py-2.5 rounded-xl cursor-pointer hover:bg-accent/50 transition-colors"
-                      onClick={() => handleToggleHabit(habit.id, !(completion?.completed || false))}
-                    >
-                      <button
-                        className="flex-shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all duration-200"
-                        style={{
-                          backgroundColor: completion?.completed ? habit.color : "transparent",
-                          borderColor: habit.color,
-                          transform: completion?.completed ? "scale(0.92)" : "scale(1)",
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleHabit(habit.id, !(completion?.completed || false));
-                        }}
-                      >
-                        {completion?.completed && (
-                          <svg
-                            className="w-4 h-4 text-white"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </button>
-                      <span
-                        className={`flex-1 text-sm transition-all duration-200 ${completion?.completed ? 'text-muted-foreground line-through' : 'text-foreground'}`}
-                      >
-                        {habit.name}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteHabit(habit.id);
-                        }}
-                        className="flex-shrink-0 p-1.5 rounded-lg bg-destructive/10 text-destructive opacity-0 group-hover:opacity-100 hover:bg-destructive/20 transition-all"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14H6L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M9 6V4h6v2" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })}
-                {habits.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground text-sm">새 습관을 추가하여 시작하세요</div>
-                )}
-              </div>
-            </div>
-
-            {/* 오늘의 진행률 링 */}
+            {/* Circular progress */}
             <div className="rounded-2xl bg-card border border-border p-8">
-              <div className="flex items-center justify-center mb-4">
+              <div className="flex items-center justify-center mb-3">
                 <CircularProgress
                   percentage={progress}
-                  completed={todayCompletions}
-                  total={habits.length}
+                  completed={todayDone}
+                  total={todayTotal}
                   segments={circularSegments}
                 />
               </div>
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground">오늘의 진행률</p>
-              </div>
+              <p className="text-center text-sm text-muted-foreground">오늘의 진행률</p>
             </div>
+
+            {/* 유지루틴 */}
+            <HabitCategory
+              title="유지루틴"
+              color={CATEGORY_COLOR["유지루틴"]}
+              habits={routineHabits}
+              completions={completions}
+              date={today}
+              onToggle={(id) => toggleHabit(id, today)}
+              onAdd={(name) => addHabit(name, "유지루틴")}
+              onDelete={deleteHabit}
+            />
+
+            {/* 생산성개선 */}
+            <HabitCategory
+              title="생산성개선"
+              color={CATEGORY_COLOR["생산성개선"]}
+              habits={productivityHabits}
+              completions={completions}
+              date={today}
+              onToggle={(id) => toggleHabit(id, today)}
+              onAdd={(name) => addHabit(name, "생산성개선")}
+              onDelete={deleteHabit}
+            />
           </TabsContent>
 
           {/* ── 주간 탭 ── */}
           <TabsContent value="weekly" className="space-y-4 mt-0">
-            <div className="rounded-2xl bg-card border border-border p-6">
-              <div className="flex items-center gap-2 mb-5">
-                <TrendingUp className="w-5 h-5 text-chart-1" />
-                <h3 className="m-0">주간 진행도</h3>
-              </div>
-              <WeeklyProgressBar data={weekProgressData} />
+            {/* Week navigation */}
+            <div className="flex items-center justify-between px-1">
+              <button
+                onClick={() => setWeekOffset((w) => w - 1)}
+                className="px-3 py-1.5 rounded-lg hover:bg-accent text-sm text-muted-foreground transition-colors"
+              >
+                ← 이전 주
+              </button>
+              <span className="text-sm font-medium">{formatDateRange(weekDates)}</span>
+              <button
+                onClick={() => setWeekOffset((w) => Math.min(w + 1, 0))}
+                disabled={weekOffset >= 0}
+                className="px-3 py-1.5 rounded-lg hover:bg-accent text-sm text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                다음 주 →
+              </button>
             </div>
 
-            {/* Weekly goal summary */}
-            <div className="rounded-2xl bg-card border border-border p-6">
+            {/* 유지루틴 dots */}
+            <div className="rounded-2xl bg-card border border-border p-5">
               <div className="flex items-center gap-2 mb-4">
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ color: "#5B8FF9" }}
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 8v4l3 3" />
-                </svg>
-                <h3 className="m-0">이번 주 공동 목표 현황</h3>
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLOR["유지루틴"] }} />
+                <h3 className="m-0 text-sm font-semibold" style={{ color: CATEGORY_COLOR["유지루틴"] }}>유지루틴</h3>
               </div>
-              <div className="space-y-3">
-                {sharedGoals.map((goal) => {
-                  const done = currentWeekCompletedIds.includes(goal.id);
-                  return (
-                    <div key={goal.id} className="flex items-center gap-3">
-                      <div
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: done ? goal.color : undefined, border: `2px solid ${goal.color}` }}
-                      />
-                      <span
-                        className={`text-sm flex-1 ${done ? "line-through text-muted-foreground" : "text-foreground"}`}
-                      >
-                        {goal.name}
-                      </span>
-                      {done && (
-                        <span
-                          className="text-xs px-2 py-0.5 rounded-full text-white"
-                          style={{ backgroundColor: goal.color }}
-                        >
-                          완료
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-                {sharedGoals.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">공동 목표가 없습니다</p>
-                )}
+              <WeeklyDots
+                habits={routineHabits}
+                completions={completions}
+                weekDates={weekDates}
+                today={today}
+                onToggle={toggleHabit}
+              />
+            </div>
+
+            {/* 생산성개선 dots */}
+            <div className="rounded-2xl bg-card border border-border p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLOR["생산성개선"] }} />
+                <h3 className="m-0 text-sm font-semibold" style={{ color: CATEGORY_COLOR["생산성개선"] }}>생산성개선</h3>
               </div>
+              <WeeklyDots
+                habits={productivityHabits}
+                completions={completions}
+                weekDates={weekDates}
+                today={today}
+                onToggle={toggleHabit}
+              />
             </div>
           </TabsContent>
 
-          {/* ── 분석 탭 ── */}
-          <TabsContent value="stats" className="space-y-4 mt-0">
-            <div className="rounded-2xl bg-card border border-border p-6">
-              <h3 className="m-0 mb-4">습관 달성 현황</h3>
-              <div className="space-y-4">
-                {habits.map((habit) => {
-                  const weeklyCount = weekDates.filter((d) =>
-                    completions.some((c) => c.habitId === habit.id && c.date === d && c.completed),
-                  ).length;
-                  const pct = Math.round((weeklyCount / 7) * 100);
-                  return (
-                    <div key={habit.id} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: habit.color }} />
-                          <span>{habit.name}</span>
-                        </div>
-                        <span className="text-muted-foreground">{weeklyCount}/7일</span>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${pct}%`, backgroundColor: habit.color }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                {habits.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">등록된 습관이 없습니다</p>
-                )}
-              </div>
+          {/* ── 월간 탭 (준비 중) ── */}
+          <TabsContent value="monthly" className="mt-0">
+            <div className="rounded-2xl bg-card border border-border p-14 text-center">
+              <CalendarDays className="w-12 h-12 mx-auto mb-4 text-muted-foreground/30" />
+              <h3 className="m-0 mb-2">월간 통계</h3>
+              <p className="text-muted-foreground text-sm">준비 중입니다</p>
             </div>
+          </TabsContent>
 
-            <div className="rounded-2xl bg-card border border-border p-6">
-              <h3 className="m-0 mb-2">이번 주 요약</h3>
-              <p className="text-sm text-muted-foreground mb-4">{formatWeekLabel()}</p>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl bg-muted p-3 text-center">
-                  <p className="text-2xl font-semibold">{habits.length}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">전체 습관</p>
-                </div>
-                <div className="rounded-xl bg-muted p-3 text-center">
-                  <p className="text-2xl font-semibold">{sharedGoals.length}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">공동 목표</p>
-                </div>
-                <div className="rounded-xl bg-muted p-3 text-center">
-                  <p className="text-2xl font-semibold">{currentWeekCompletedIds.length}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">목표 달성</p>
-                </div>
-              </div>
+          {/* ── 연간 탭 (준비 중) ── */}
+          <TabsContent value="yearly" className="mt-0">
+            <div className="rounded-2xl bg-card border border-border p-14 text-center">
+              <BarChart2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/30" />
+              <h3 className="m-0 mb-2">연간 통계</h3>
+              <p className="text-muted-foreground text-sm">준비 중입니다</p>
             </div>
           </TabsContent>
         </Tabs>
+      </div>
+    </div>
+  );
+}
+
+// ── HabitCategory ──────────────────────────────────────────────────────────
+
+interface HabitCategoryProps {
+  title: string;
+  color: string;
+  habits: Habit[];
+  completions: HabitCompletion[];
+  date: string;
+  onToggle: (id: string) => void;
+  onAdd: (name: string) => void;
+  onDelete: (id: string) => void;
+}
+
+function HabitCategory({
+  title, color, habits, completions, date, onToggle, onAdd, onDelete,
+}: HabitCategoryProps) {
+  const completedCount = habits.filter((h) =>
+    completions.some((c) => c.habitId === h.id && c.date === date && c.completed),
+  ).length;
+
+  return (
+    <div className="rounded-2xl bg-card border border-border overflow-hidden">
+      <div className="px-5 pt-4 pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+            <h3 className="m-0 text-base">{title}</h3>
+            <span className="text-sm text-muted-foreground">
+              ({completedCount}/{habits.length})
+            </span>
+          </div>
+          <AddHabitDialog onAdd={onAdd} categoryLabel={title} />
+        </div>
+      </div>
+
+      <div className="px-3 pb-3 space-y-1">
+        {habits.map((habit) => {
+          const done = completions.some(
+            (c) => c.habitId === habit.id && c.date === date && c.completed,
+          );
+          return (
+            <div
+              key={habit.id}
+              className="group flex items-center gap-3 px-2 py-2.5 rounded-xl cursor-pointer hover:bg-accent/50 transition-colors"
+              onClick={() => onToggle(habit.id)}
+            >
+              <button
+                className="flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-200"
+                style={{
+                  backgroundColor: done ? habit.color : "transparent",
+                  borderColor: habit.color,
+                  transform: done ? "scale(0.92)" : "scale(1)",
+                }}
+                onClick={(e) => { e.stopPropagation(); onToggle(habit.id); }}
+              >
+                {done && (
+                  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </button>
+
+              <span className={`flex-1 text-sm transition-all duration-200 ${done ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                {habit.name}
+              </span>
+
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(habit.id); }}
+                className="flex-shrink-0 p-1.5 rounded-lg bg-destructive/10 text-destructive opacity-0 group-hover:opacity-100 hover:bg-destructive/20 transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })}
+        {habits.length === 0 && (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            추가 버튼으로 새 항목을 등록하세요
+          </div>
+        )}
       </div>
     </div>
   );
