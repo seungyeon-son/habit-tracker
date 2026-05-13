@@ -203,9 +203,7 @@ export default function App() {
               </p>
             </div>
           </div>
-          {isFirebaseEnabled && (
-            <AuthButton user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
-          )}
+          <AuthButton user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
         </div>
 
         {/* Tabs */}
