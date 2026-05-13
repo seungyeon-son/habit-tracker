@@ -6,7 +6,7 @@ import { AuthButton } from "./components/AuthButton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { Calendar, TrendingUp, CalendarDays, BarChart2, Trash2 } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
-import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, User } from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -88,9 +88,6 @@ function loadLocal<T>(key: string, fallback: T): T {
 
 // ── App ────────────────────────────────────────────────────────────────────
 
-// 모바일 감지 (iOS Safari / Android)
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
 export default function App() {
   const [user, setUser]               = useState<User | null>(null);
   const [firestoreReady, setFirestoreReady] = useState(false);
@@ -110,12 +107,6 @@ export default function App() {
   // ── Firebase auth ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!auth) return;
-
-    // 모바일 redirect 로그인 완료 처리
-    getRedirectResult(auth).catch((err) => {
-      console.error("Redirect sign-in error:", err);
-    });
-
     return onAuthStateChanged(auth, async (u) => {
       if (u && db) {
         // Firestore 로딩 완료 전까지 sync 차단 (race condition 방지)
@@ -157,12 +148,8 @@ export default function App() {
   const handleSignIn = async () => {
     if (!auth || !googleProvider) return;
     try {
-      if (isMobile) {
-        // 모바일: redirect 방식 (팝업 차단 + sessionStorage 파티셔닝 우회)
-        await signInWithRedirect(auth, googleProvider);
-      } else {
-        await signInWithPopup(auth, googleProvider);
-      }
+      // popup + postMessage 방식: sessionStorage 불필요, iOS Safari 호환
+      await signInWithPopup(auth, googleProvider);
     } catch (err) { console.error("Google sign-in failed:", err); }
   };
   const handleSignOut = async () => {

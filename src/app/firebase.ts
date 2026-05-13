@@ -1,5 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from 'firebase/auth';
+import {
+  initializeAuth,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Firebase 클라이언트 설정 (공개 키 - 브라우저에 노출되는 값, 보안은 Firestore Rules로 관리)
@@ -14,12 +20,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const _auth = getAuth(app);
 
-// 탭/브라우저 닫아도 로그인 상태 유지 (localStorage 기반)
-setPersistence(_auth, browserLocalPersistence);
+// indexedDB 우선 사용 → iOS Safari Storage 파티셔닝에 강함
+// browserPopupRedirectResolver: popup 통신에 postMessage 사용 (sessionStorage 불필요)
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 
-export const auth = _auth;
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 export const isFirebaseEnabled = true;
